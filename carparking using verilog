@@ -1,0 +1,120 @@
+`timescale 1ns / 1ps
+
+module parking_system(
+    input clock_in,
+    input rst_in,
+    input laser_entry,  // Laser at entrance (1 = broken, car detected)
+    input laser_exit,   // Laser at exit (1 = broken, car detected)
+    input [7:0] keycode,  // PS/2 received keycode
+    input key_valid,      // PS/2 valid key signal
+    output wire G_LED, R_LED,
+    output reg [6:0] HEX_1, HEX_2,
+    output reg servo_pwm  // Servo motor control output
+);
+
+    parameter IDLE = 3'b000, WAIT_PASSWORD = 3'b001, WRONG_PASS = 3'b010, RIGHT_PASS = 3'b011, STOP = 3'b100;
+    
+    // 4-digit password storage (hardcoded for now: 1234)
+    reg [3:0] password [0:3];
+    reg [1:0] digit_count;
+    reg [3:0] entered_pass [0:3];
+    wire correct_password;
+    reg [2:0] NS;
+    reg green_tmp, red_tmp;
+    
+    initial begin
+        password[0] = 4'd1;  // '1'
+        password[1] = 4'd2;  // '2'
+        password[2] = 4'd3;  // '3'
+        password[3] = 4'd4;  // '4'
+    end
+    
+    always @(posedge clock_in or posedge rst_in) begin
+        if (rst_in) digit_count <= 0;
+        else if (key_valid && digit_count < 4) begin
+            entered_pass[digit_count] <= keycode[3:0]; // Extract numeric part
+            digit_count <= digit_count + 1;
+        end
+    end
+    
+    assign correct_password = (entered_pass[0] == password[0]) &&
+                              (entered_pass[1] == password[1]) &&
+                              (entered_pass[2] == password[2]) &&
+                              (entered_pass[3] == password[3]);
+    
+    always @(*) begin
+        case(NS)
+            IDLE: 
+                if (laser_entry == 1) NS = WAIT_PASSWORD;
+                else NS = IDLE;
+            
+            WAIT_PASSWORD: 
+                if (digit_count == 4) begin
+                    if (correct_password) NS = RIGHT_PASS;
+                    else NS = WRONG_PASS;
+                end else NS = WAIT_PASSWORD;
+            
+            WRONG_PASS:
+                NS = WAIT_PASSWORD;
+            
+            RIGHT_PASS:
+                if (laser_exit == 1) NS = IDLE;
+                else if (laser_entry == 1 && laser_exit == 1) NS = STOP;
+                else NS = RIGHT_PASS;
+            
+            STOP:
+                if (digit_count == 4 && correct_password) NS = RIGHT_PASS;
+                else NS = STOP;
+                
+            default: NS = IDLE;
+        endcase
+    end
+    
+    always @(*) begin
+        case(NS)
+            IDLE: begin
+                green_tmp = 0;
+                red_tmp = 0;
+                HEX_1 = 7'b1111111;
+                HEX_2 = 7'b1111111;
+                servo_pwm = 0; // Barrier closed
+            end
+            
+            WAIT_PASSWORD: begin
+                green_tmp = 0;
+                red_tmp = 1;
+                HEX_1 = 7'b0000110; // E
+                HEX_2 = 7'b0101011; // n
+                servo_pwm = 0; // Keep closed
+            end
+            
+            WRONG_PASS: begin
+                green_tmp = 0;
+                red_tmp = ~red_tmp;
+                HEX_1 = 7'b0000110; // E
+                HEX_2 = 7'b0000110; // E
+                servo_pwm = 0; // Keep closed
+            end
+            
+            RIGHT_PASS: begin
+                green_tmp = 1;
+                red_tmp = 0;
+                HEX_1 = 7'b0000010; // 6
+                HEX_2 = 7'b1000000; // 0
+                servo_pwm = 1; // Open barrier
+            end
+            
+            STOP: begin
+                green_tmp = 0;
+                red_tmp = ~red_tmp;
+                HEX_1 = 7'b0010010; // 5
+                HEX_2 = 7'b0001100; // P
+                servo_pwm = 0; // Close barrier again
+            end
+        endcase
+    end
+    
+    assign R_LED = red_tmp;
+    assign G_LED = green_tmp;
+    
+endmodule
