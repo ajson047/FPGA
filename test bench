@@ -1,0 +1,144 @@
+`timescale 1ns / 1ps
+
+module parking_system_tb;
+
+  // Inputs to the DUT
+  reg clock_in;
+  reg rst_in;
+  reg laser_entry;
+  reg laser_exit;
+  reg [7:0] keycode;
+  reg key_valid;
+
+  // Outputs from the DUT
+  wire G_LED;
+  wire R_LED;
+  wire [6:0] HEX_1;
+  wire [6:0] HEX_2;
+
+  // Instantiate the Design Under Test (DUT)
+  parking_system DUT (
+    .clock_in(clock_in),
+    .rst_in(rst_in),
+    .laser_entry(laser_entry),
+    .laser_exit(laser_exit),
+    .keycode(keycode),
+    .key_valid(key_valid),
+    .G_LED(G_LED),
+    .R_LED(R_LED),
+    .HEX_1(HEX_1),
+    .HEX_2(HEX_2)
+  );
+
+  // Clock generation: 20 ns period => 50 MHz
+  initial begin
+    clock_in = 0;
+    forever #10 clock_in = ~clock_in;
+  end
+
+  // Main stimulus block
+  initial begin
+    // Initial values
+    rst_in       = 1;       // Assert reset
+    laser_entry  = 0;
+    laser_exit   = 0;
+    keycode      = 8'd0;
+    key_valid    = 0;
+
+    // Hold reset for 100 ns
+    #100;
+    rst_in = 0;  // Deassert reset
+
+    // Wait a bit before starting tests
+    #100;
+
+    // =============== SCENARIO 1: Correct Password Entry ===============
+    $display("=== SCENARIO 1: Correct Password Entry ===");
+    // Simulate a car breaking the laser at the entrance
+    laser_entry = 1;
+    #20;
+    laser_entry = 0;  // Return to 0
+    #50;
+
+    // Provide 4 correct digits: 1, 2, 3, 4 (lower nibble of keycode)
+    send_digit(8'h01);  // '1'
+    send_digit(8'h02);  // '2'
+    send_digit(8'h03);  // '3'
+    send_digit(8'h04);  // '4'
+
+    // Wait and then simulate car exit
+    #100;
+    laser_exit = 1;
+    #20;
+    laser_exit = 0;
+    #100;
+
+    // =============== SCENARIO 2: Wrong Password Entry ===============
+    $display("=== SCENARIO 2: Wrong Password Entry ===");
+    // Another car at the entrance
+    laser_entry = 1;
+    #20;
+    laser_entry = 0;
+    #50;
+
+    // Provide 4 digits: 1, 2, 3, 5 => WRONG
+    send_digit(8'h01);  // '1'
+    send_digit(8'h02);  // '2'
+    send_digit(8'h03);  // '3'
+    send_digit(8'h05);  // '5' (incorrect last digit)
+
+    // Wait to see if system returns to WAIT_PASSWORD
+    #200;
+
+    // =============== SCENARIO 3: STOP State Check ===============
+    $display("=== SCENARIO 3: STOP State Check ===");
+    // Car at the entrance again
+    laser_entry = 1;
+    #20;
+    laser_entry = 0;
+    #50;
+
+    // Provide correct password again (1,2,3,4) => Should go to RIGHT_PASS
+    send_digit(8'h01);
+    send_digit(8'h02);
+    send_digit(8'h03);
+    send_digit(8'h04);
+    #100;
+
+    // Now trigger both entry & exit lasers => Should go to STOP
+    laser_entry = 1;
+    laser_exit  = 1;
+    #50;
+    laser_entry = 0;
+    laser_exit  = 0;
+    #100;
+
+    // To exit STOP, we must enter the correct password again
+    send_digit(8'h01);
+    send_digit(8'h02);
+    send_digit(8'h03);
+    send_digit(8'h04);
+    #100;
+
+    // Car exit to go back to IDLE
+    laser_exit = 1;
+    #20;
+    laser_exit = 0;
+    #100;
+
+    $display("Simulation complete.");
+    $stop;  // or $finish;
+  end
+
+  // Helper task to send one digit with a brief key_valid pulse
+  task send_digit(input [7:0] digit_code);
+    begin
+      keycode   = digit_code;
+      key_valid = 1;
+      #20;           // Key valid for one clock cycle
+      key_valid = 0;
+      #40;           // Wait before next digit
+    end
+  endtask
+
+endmodule
