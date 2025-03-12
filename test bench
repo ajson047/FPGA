@@ -15,6 +15,7 @@ module parking_system_tb;
   wire R_LED;
   wire [6:0] HEX_1;
   wire [6:0] HEX_2;
+  wire servo_pwm;   // <-- Make sure to include the servo output in the TB
 
   // Instantiate the Design Under Test (DUT)
   parking_system DUT (
@@ -27,7 +28,8 @@ module parking_system_tb;
     .G_LED(G_LED),
     .R_LED(R_LED),
     .HEX_1(HEX_1),
-    .HEX_2(HEX_2)
+    .HEX_2(HEX_2),
+    .servo_pwm(servo_pwm) // Connect servo output
   );
 
   // Clock generation: 20 ns period => 50 MHz
@@ -81,11 +83,11 @@ module parking_system_tb;
     laser_entry = 0;
     #50;
 
-    // Provide 4 digits: 1, 2, 3, 5 => WRONG
+    // Provide 4 digits: 1, 2, 3, 5 => WRONG last digit
     send_digit(8'h01);  // '1'
     send_digit(8'h02);  // '2'
     send_digit(8'h03);  // '3'
-    send_digit(8'h05);  // '5' (incorrect last digit)
+    send_digit(8'h05);  // '5'
 
     // Wait to see if system returns to WAIT_PASSWORD
     #200;
@@ -135,10 +137,13 @@ module parking_system_tb;
     begin
       keycode   = digit_code;
       key_valid = 1;
-      #20;           // Key valid for one clock cycle
+      #20;           // Key valid for ~1 clock cycle
       key_valid = 0;
       #40;           // Wait before next digit
     end
   endtask
 
 endmodule
+
+
+
